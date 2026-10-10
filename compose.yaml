@@ -1,0 +1,130 @@
+services:
+  # =========================
+  mysql-inventory:
+    image: mysql:8.4
+    container_name: mysql-inventory
+
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: inventory_db
+
+    ports:
+      - "3307:3306"
+
+    volumes:
+      - inventory-data:/var/lib/mysql
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+
+  # =========================
+  mysql-order:
+    image: mysql:8.4
+    container_name: mysql-order
+
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: order_db
+
+    ports:
+      - "3308:3306"
+
+    volumes:
+      - order-data:/var/lib/mysql
+
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-proot"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+
+  # =========================
+  inventory-service:
+    build:
+      context: ./inventory-service
+      dockerfile: Dockerfile
+
+    container_name: inventory-service
+
+    environment:
+      DB_URL: jdbc:mysql://mysql-inventory:3306/inventory_db?createDatabaseIfNotExist=true
+      DB_USERNAME: root
+      DB_PASSWORD: root
+
+    depends_on:
+      mysql-inventory:
+        condition: service_healthy
+
+
+  # =========================
+  order-service:
+    build:
+      context: ./order-service
+      dockerfile: Dockerfile
+
+    container_name: order-service
+
+    environment:
+      DB_URL: jdbc:mysql://mysql-order:3306/order_db?createDatabaseIfNotExist=true
+      DB_USERNAME: root
+      DB_PASSWORD: root
+      INVENTORY_URL: http://inventory-service:8080/api/products
+
+    depends_on:
+      mysql-order:
+        condition: service_healthy
+      inventory-service:
+        condition: service_started
+
+
+  # =========================
+  keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    container_name: keycloak
+
+    command: start-dev --import-realm
+
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+
+    ports:
+      - "8083:8080"
+
+    volumes:
+      - ./keycloak/order-system-realm.json:/opt/keycloak/data/import/order-system-realm.json
+
+
+    # =========================
+  api-gateway:
+    build:
+      context: ./api-gateway
+      dockerfile: Dockerfile
+
+    container_name: api-gateway
+
+    environment:
+      INVENTORY_URL: http://inventory-service:8080
+      ORDER_URL: http://order-service:8081
+      KEYCLOAK_ISSUER_URI: http://localhost:8083/realms/order-system
+      KEYCLOAK_JWK_SET_URI: http://keycloak:8080/realms/order-system/protocol/openid-connect/certs
+
+    ports:
+      - "8082:8082"
+
+    depends_on:
+      - inventory-service
+      - order-service
+      - keycloak
+
+
+volumes:
+  inventory-data:
+  order-data:
