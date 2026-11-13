@@ -1,4 +1,5 @@
-Guia rápida para el evaluador
+levantar
+
 1.	En la ruta de la carpeta raíz del proyecto , ejecutar en PS: 
 docker compose up –build
 2.	Verificar con: docker compose ps
